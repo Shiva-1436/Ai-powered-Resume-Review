@@ -14,8 +14,7 @@
 //                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
 //                .allowedHeaders("*")
 //                .allowCredentials(false);
-//    }
-//}
+//
 
 
 package com.AI_Powered.Resume.Reviewer.config;
