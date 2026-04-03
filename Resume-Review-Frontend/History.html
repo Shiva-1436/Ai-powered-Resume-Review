@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>History — ResumeAI</title>
+    <link rel="icon" type="image/png" href="/static/seo.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+
+<!-- Navbar -->
+<nav class="bg-white shadow-sm px-6 py-4 flex justify-between items-center">
+    <h1 class="text-xl font-bold text-gray-800">ResumeAI</h1>
+    <div class="flex gap-4 items-center">
+        <a href="analyzer.html" class="text-sm text-blue-600 hover:underline">Analyzer</a>
+
+        <a href="interview-prep.html" class="text-sm text-blue-600 hover:underline">Interview Prep</a>
+
+        <span id="userEmail" class="text-sm text-gray-500"></span>
+        <button onclick="logout()" class="text-sm text-red-500 hover:underline">Logout</button>
+    </div>
+</nav>
+
+<!-- Main -->
+<div class="max-w-3xl mx-auto px-4 py-8">
+
+    <h2 class="text-lg font-semibold text-gray-800 mb-4">Resume History</h2>
+
+    <!-- Loading -->
+    <div id="loading" class="text-center text-gray-500 text-sm py-10">Loading history...</div>
+
+    <!-- Error -->
+    <div id="errorAlert" class="hidden bg-red-100 text-red-700 text-sm px-4 py-3 rounded mb-4"></div>
+
+    <!-- Empty State -->
+    <div id="emptyState" class="hidden text-center text-gray-400 text-sm py-10">
+        No resumes analyzed yet. <a href="analyzer.html" class="text-blue-600 hover:underline">Analyze one now!</a>
+    </div>
+
+    <!-- History List -->
+    <div id="historyList" class="hidden space-y-4"></div>
+
+    <!-- Modal for full feedback -->
+    <div id="modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
+        <div class="bg-white rounded-lg shadow-lg w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center px-6 py-4 border-b">
+                <h3 id="modalTitle" class="text-base font-semibold text-gray-800"></h3>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
+            </div>
+            <div id="modalContent" class="overflow-y-auto px-6 py-4 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed"></div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+<!--    const BASE_URL = 'https://ai-powered-resume-review-production.up.railway.app';-->
+
+    const BASE_URL = 'http://localhost:8080';
+    // Auth check
+    const token = localStorage.getItem('token');
+    if (!token) window.location.href = 'login.html';
+
+    // Show user email
+    const email = localStorage.getItem('userEmail');
+    if (email) document.getElementById('userEmail').textContent = email;
+
+    function logout() {
+      localStorage.removeItem('token');
+      localStorage.removeItem('userEmail');
+      window.location.href = 'login.html';
+    }
+
+    function showError(message) {
+      const el = document.getElementById('errorAlert');
+      el.textContent = message;
+      el.classList.remove('hidden');
+    }
+
+    function formatDate(dateStr) {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-IN', {
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      });
+    }
+
+    function getScoreColor(score) {
+      if (score >= 7) return 'text-green-600';
+      if (score >= 4) return 'text-yellow-500';
+      return 'text-red-500';
+    }
+
+    function openModal(fileName, feedback) {
+      document.getElementById('modalTitle').textContent = fileName;
+      document.getElementById('modalContent').textContent = feedback;
+      document.getElementById('modal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('modal').classList.add('hidden');
+    }
+
+    // Close modal on backdrop click
+    document.getElementById('modal').addEventListener('click', function(e) {
+      if (e.target === this) closeModal();
+    });
+
+    async function loadHistory() {
+      try {
+        const res = await fetch(`${BASE_URL}/api/resume/history`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (res.status === 401) {
+          localStorage.removeItem('token');
+          window.location.href = 'login.html';
+          return;
+        }
+
+        if (!res.ok) {
+          showError('Failed to load history.');
+          document.getElementById('loading').classList.add('hidden');
+          return;
+        }
+
+        const data = await res.json();
+
+        document.getElementById('loading').classList.add('hidden');
+
+        if (!data || data.length === 0) {
+          document.getElementById('emptyState').classList.remove('hidden');
+          return;
+        }
+
+        const list = document.getElementById('historyList');
+        list.classList.remove('hidden');
+
+        data.forEach((item, index) => {
+          const scoreColor = getScoreColor(item.score);
+          const card = document.createElement('div');
+          card.className = 'bg-white rounded-lg shadow-md p-5 flex justify-between items-center';
+          card.innerHTML = `
+            <div>
+              <p class="text-sm font-semibold text-gray-800">${item.resumeFileName}</p>
+              <p class="text-xs text-gray-400 mt-1">${formatDate(item.analyzedAt)}</p>
+            </div>
+            <div class="flex items-center gap-4">
+              <div class="text-center">
+                <p class="text-xs text-gray-400">Score</p>
+                <p class="text-lg font-bold ${scoreColor}">${item.score}/10</p>
+              </div>
+              <button onclick="openModal('${item.resumeFileName.replace(/'/g, "\\'")}', \`${item.feedback.replace(/`/g, '\\`')}\`)"
+                class="text-sm bg-blue-50 hover:bg-blue-100 text-blue-600 px-3 py-1 rounded transition">
+                View
+              </button>
+            </div>
+          `;
+          list.appendChild(card);
+        });
+
+      } catch (err) {
+        document.getElementById('loading').classList.add('hidden');
+        showError('Network error. Please check your connection.');
+      }
+    }
+
+    loadHistory();
+</script>
+
+</body>
+</html>

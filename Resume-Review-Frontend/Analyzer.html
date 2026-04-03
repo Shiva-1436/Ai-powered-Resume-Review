@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Analyzer — ResumeAI</title>
+
+    <link rel="icon" type="image/png" href="/static/seo.png">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+
+<!-- Navbar -->
+<nav class="bg-white shadow-sm px-6 py-4 flex justify-between items-center">
+    <h1 class="text-xl font-bold text-gray-800">ResumeAI</h1>
+    <div class="flex gap-4 items-center">
+        <a href="history.html" class="text-sm text-blue-600 hover:underline">History</a>
+
+        <a href="interview-prep.html" class="text-sm text-blue-600 hover:underline">Interview Prep</a>
+
+        <span id="userEmail" class="text-sm text-gray-500"></span>
+        <button onclick="logout()" class="text-sm text-red-500 hover:underline">Logout</button>
+    </div>
+</nav>
+
+<!-- Main -->
+<div class="max-w-3xl mx-auto px-4 py-8">
+
+    <!-- Upload Card -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+        <h2 class="text-lg font-semibold text-gray-800 mb-4">Analyze Your Resume</h2>
+
+        <!-- Error Alert -->
+        <div id="errorAlert" class="hidden bg-red-100 text-red-700 text-sm px-4 py-3 rounded mb-4"></div>
+
+        <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Upload Resume (PDF)</label>
+            <input id="resumeFile" type="file" accept=".pdf"
+                   class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+
+        <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Job Description</label>
+            <textarea id="jobDescription" rows="5" placeholder="Paste the job description here..."
+                      class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
+        </div>
+
+        <button id="analyzeBtn" onclick="handleAnalyze()"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded transition">
+            Analyze Resume
+        </button>
+    </div>
+
+    <!-- Results Section (hidden until response) -->
+    <div id="results" class="hidden space-y-4">
+
+        <!-- Score Card -->
+        <div class="bg-white rounded-lg shadow-md p-6 text-center">
+            <p class="text-sm text-gray-500 mb-1">JD Match Score</p>
+            <p id="scoreText" class="text-5xl font-bold text-blue-600"></p>
+            <p id="scoreNote" class="text-sm text-gray-500 mt-2"></p>
+        </div>
+
+        <!-- Strong Points -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h3 class="text-base font-semibold text-green-600 mb-3">✅ Strong Points</h3>
+            <ul id="strongPoints" class="list-disc list-inside text-sm text-gray-700 space-y-1"></ul>
+        </div>
+
+        <!-- Weak Points -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h3 class="text-base font-semibold text-red-500 mb-3">⚠️ Weak Points</h3>
+            <ul id="weakPoints" class="list-disc list-inside text-sm text-gray-700 space-y-1"></ul>
+        </div>
+
+        <!-- Missing Skills -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h3 class="text-base font-semibold text-yellow-600 mb-3">🔍 Missing Skills</h3>
+            <ul id="missingSkills" class="list-disc list-inside text-sm text-gray-700 space-y-1"></ul>
+        </div>
+
+        <!-- What to Improve -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h3 class="text-base font-semibold text-blue-600 mb-3">📈 What to Improve</h3>
+            <ul id="whatToImprove" class="list-disc list-inside text-sm text-gray-700 space-y-1"></ul>
+        </div>
+
+    </div>
+</div>
+
+<script>
+<!--    const BASE_URL = 'https://ai-powered-resume-review-production.up.railway.app';-->
+
+    const BASE_URL = 'http://localhost:8080';
+    // Auth check
+    const token = localStorage.getItem('token');
+    if (!token) window.location.href = 'login.html';
+
+    // Show user email in navbar
+    const email = localStorage.getItem('userEmail');
+    if (email) document.getElementById('userEmail').textContent = email;
+
+    function logout() {
+      localStorage.removeItem('token');
+      localStorage.removeItem('userEmail');
+      window.location.href = 'login.html';
+    }
+
+    function showError(message) {
+      const el = document.getElementById('errorAlert');
+      el.textContent = message;
+      el.classList.remove('hidden');
+      setTimeout(() => el.classList.add('hidden'), 5000);
+    }
+
+    // Parse the plain text response into sections
+    function parseResponse(text) {
+      const result = {
+        strongPoints: [],
+        weakPoints: [],
+        missingSkills: [],
+        whatToImprove: [],
+        score: '',
+        scoreNote: ''
+      };
+
+      const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+      let currentSection = null;
+
+      for (const line of lines) {
+        if (line.startsWith('STRONG POINTS')) { currentSection = 'strong'; continue; }
+        if (line.startsWith('WEAK POINTS')) { currentSection = 'weak'; continue; }
+        if (line.startsWith('MISSING SKILLS')) { currentSection = 'missing'; continue; }
+        if (line.startsWith('WHAT TO IMPROVE')) { currentSection = 'improve'; continue; }
+        if (line.startsWith('JD MATCH SCORE')) {
+          currentSection = 'score';
+          const match = line.match(/(\d+\/\d+|\d+)/);
+          if (match) result.score = match[1];
+          continue;
+        }
+
+        if (currentSection === 'score' && line && !line.startsWith('-')) {
+          result.scoreNote = line;
+          continue;
+        }
+
+        if (line.startsWith('-')) {
+          const item = line.replace(/^-\s*/, '');
+          if (currentSection === 'strong') result.strongPoints.push(item);
+          else if (currentSection === 'weak') result.weakPoints.push(item);
+          else if (currentSection === 'missing') result.missingSkills.push(item);
+          else if (currentSection === 'improve') result.whatToImprove.push(item);
+        }
+      }
+
+      return result;
+    }
+
+    function renderList(id, items) {
+      const ul = document.getElementById(id);
+      ul.innerHTML = '';
+      if (items.length === 0) {
+        ul.innerHTML = '<li class="text-gray-400">No data found.</li>';
+        return;
+      }
+      items.forEach(item => {
+        const li = document.createElement('li');
+        li.textContent = item;
+        ul.appendChild(li);
+      });
+    }
+
+    async function handleAnalyze() {
+      const file = document.getElementById('resumeFile').files[0];
+      const jd = document.getElementById('jobDescription').value.trim();
+      const btn = document.getElementById('analyzeBtn');
+
+      if (!file) { showError('Please upload a PDF resume.'); return; }
+      if (!jd) { showError('Please enter a job description.'); return; }
+
+      // Hide previous results
+      document.getElementById('results').classList.add('hidden');
+
+      btn.textContent = 'Analyzing...';
+      btn.disabled = true;
+
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('jobDescription', jd);
+
+        const res = await fetch(`${BASE_URL}/api/resume/upload`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData
+        });
+
+        if (res.status === 401) {
+          localStorage.removeItem('token');
+          window.location.href = 'login.html';
+          return;
+        }
+
+        if (!res.ok) {
+          const err = await res.text();
+          showError(err || 'Failed to analyze resume.');
+          return;
+        }
+
+        const text = await res.text();
+        const parsed = parseResponse(text);
+
+        // Render score
+        document.getElementById('scoreText').textContent = parsed.score || 'N/A';
+        document.getElementById('scoreNote').textContent = parsed.scoreNote || '';
+
+        // Render sections
+        renderList('strongPoints', parsed.strongPoints);
+        renderList('weakPoints', parsed.weakPoints);
+        renderList('missingSkills', parsed.missingSkills);
+        renderList('whatToImprove', parsed.whatToImprove);
+
+        // Show results
+        document.getElementById('results').classList.remove('hidden');
+        document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
+
+      } catch (err) {
+        showError('Network error. Please check your connection.');
+      } finally {
+        btn.textContent = 'Analyze Resume';
+        btn.disabled = false;
+      }
+    }
+</script>
+
+</body>
+</html>
